@@ -28,6 +28,7 @@ label{display:flex;flex-direction:column;justify-content:flex-end;min-width:0;fo
 input,select{display:block;width:100%;min-width:0;margin-top:4px;padding:0 10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;height:44px}
 input[type=time],input[type=number]{-webkit-appearance:none;appearance:none;text-align:left}
 input::-webkit-date-and-time-value{text-align:left}
+.nw{white-space:nowrap}
 input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .full{grid-column:1/-1}
 .result{border:2px solid var(--accent)}
@@ -60,9 +61,9 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 <h2 id="h-in">This calculation</h2>
 <div class="grid">
 <label>Current time<input type="time" id="now"></label>
-<label>Blood glucose (<span class="u"></span>)<input type="number" id="bg" inputmode="decimal" step="any" min="0"></label>
-<label>Carbs to eat (g)<input type="number" id="carbs" inputmode="decimal" step="any" min="0" value="0"></label>
-<label>Previous bolus (units)<input type="number" id="prev" inputmode="decimal" step="any" min="0" value="0"></label>
+<label><span>Blood glucose <span class="nw">(<span class="u"></span>)</span></span><input type="number" id="bg" inputmode="decimal" step="any" min="0"></label>
+<label><span>Carbs to eat <span class="nw">(g)</span></span><input type="number" id="carbs" inputmode="decimal" step="any" min="0" value="0"></label>
+<label><span>Previous bolus <span class="nw">(units)</span></span><input type="number" id="prev" inputmode="decimal" step="any" min="0" value="0"></label>
 <label class="full">Time of previous bolus<input type="time" id="prevT"></label>
 </div>
 </section>
@@ -76,13 +77,13 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 <summary>Settings</summary>
 <div class="grid" style="margin-top:12px">
 <label>Glucose units<select id="unit"><option value="mmol">mmol/L</option><option value="mg">mg/dL</option></select></label>
-<label>Target glucose (<span class="u"></span>)<input type="number" id="target" inputmode="decimal" step="any"></label>
-<label>Correction factor (<span class="u"></span> drop per unit)<input type="number" id="cf" inputmode="decimal" step="any"></label>
-<label>Insulin action time (hours)<input type="number" id="dia" inputmode="decimal" step="any"></label>
-<label>Round dose to (units)<select id="step"><option>0.05</option><option>0.1</option><option>0.5</option><option>1</option></select></label>
-<label>Maximum dose (units)<input type="number" id="max" inputmode="decimal" step="any"></label>
+<label><span>Target glucose <span class="nw">(<span class="u"></span>)</span></span><input type="number" id="target" inputmode="decimal" step="any"></label>
+<label><span>Correction factor <span class="nw">(<span class="u"></span> per unit)</span></span><input type="number" id="cf" inputmode="decimal" step="any"></label>
+<label><span>Insulin action time <span class="nw">(hours)</span></span><input type="number" id="dia" inputmode="decimal" step="any"></label>
+<label><span>Round dose to <span class="nw">(units)</span></span><select id="step"><option>0.05</option><option>0.1</option><option>0.5</option><option>1</option></select></label>
+<label><span>Maximum dose <span class="nw">(units)</span></span><input type="number" id="max" inputmode="decimal" step="any"></label>
 </div>
-<h2 style="margin-top:18px">Carb ratio (g of carbs per unit)</h2>
+<h2 style="margin-top:18px">Carb ratio <span class="nw">(g of carbs per unit)</span></h2>
 <div id="periods"></div>
 <button type="button" id="addP">Add time period</button>
 <p class="note">Each ratio applies from its start time until the next one begins. Settings are saved on this device.</p>
