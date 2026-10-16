@@ -29,6 +29,11 @@ input,select{display:block;width:100%;min-width:0;margin-top:4px;padding:0 10px;
 input[type=time],input[type=number]{-webkit-appearance:none;appearance:none;text-align:left}
 input::-webkit-date-and-time-value{text-align:left}
 .nw{white-space:nowrap}
+.gline{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round}
+.garea{fill:var(--accent);opacity:.12}
+.gaxis{stroke:var(--line);stroke-width:1}
+.gtxt{fill:var(--mute);font-size:10px}
+#gbox svg{display:block;max-width:100%;height:auto}
 input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .full{grid-column:1/-1}
 .result{border:2px solid var(--accent)}
@@ -72,6 +77,12 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 <button type="button" class="primary" id="saveB" style="width:100%" disabled>Save as previous bolus</button>
 <p class="note" id="saveMsg" aria-live="polite" style="margin:8px 0 14px">Saves the current time and suggested dose for your next calculation. Change the dose under "Previous bolus" if you took a different amount.</p>
 
+<section id="gsec" hidden>
+<h2 id="gt">Graph</h2>
+<div id="gbox"></div>
+<p class="note" id="gcap" style="margin-bottom:0"></p>
+</section>
+
 <section>
 <details>
 <summary>Settings</summary>
@@ -81,6 +92,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 <label><span>Correction factor <span class="nw">(<span class="u"></span> per unit)</span></span><input type="number" id="cf" inputmode="decimal" step="any"></label>
 <label><span>Insulin action time <span class="nw">(hours)</span></span><input type="number" id="dia" inputmode="decimal" step="any"></label>
 <label><span>Peak insulin action <span class="nw">(minutes)</span></span><input type="number" id="peak" inputmode="decimal" step="any"></label>
+<label class="full"><span>Graph</span><select id="graph"><option value="iob">Insulin on board (declining)</option><option value="act">How hard the insulin is working</option><option value="none">No graph</option></select></label>
 <label><span>Round dose to <span class="nw">(units)</span></span><select id="step"><option>0.05</option><option>0.1</option><option>0.5</option><option>1</option></select></label>
 <label><span>Maximum dose <span class="nw">(units)</span></span><input type="number" id="max" inputmode="decimal" step="any"></label>
 </div>
@@ -97,7 +109,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 <script>
 (function(){
 var KEY="bolus-settings-v1";
-var S={unit:"mmol",target:6,cf:2,dia:4,peak:75,step:"0.5",max:15,periods:[{s:"00:00",r:12},{s:"06:00",r:10},{s:"11:00",r:12},{s:"17:00",r:12}]};
+var S={unit:"mmol",target:6,cf:2,dia:4,peak:75,graph:"iob",step:"0.5",max:15,periods:[{s:"00:00",r:12},{s:"06:00",r:10},{s:"11:00",r:12},{s:"17:00",r:12}]};
 try{var raw=localStorage.getItem(KEY);if(raw){var p=JSON.parse(raw);if(p&&p.periods&&p.periods.length)S=Object.assign(S,p)}}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 var $=function(id){return document.getElementById(id)};
@@ -121,7 +133,7 @@ function periodsUI(){
   });
 }
 function fillSettings(){
-  $("unit").value=S.unit;$("target").value=S.target;$("cf").value=S.cf;$("dia").value=S.dia;$("peak").value=S.peak;$("step").value=S.step;$("max").value=S.max;
+  $("unit").value=S.unit;$("target").value=S.target;$("cf").value=S.cf;$("dia").value=S.dia;$("peak").value=S.peak;$("graph").value=S.graph;$("step").value=S.step;$("max").value=S.max;
   document.querySelectorAll(".u").forEach(function(e){e.textContent=S.unit==="mmol"?"mmol/L":"mg/dL"});
   $("bg").step=S.unit==="mmol"?"0.1":"1";
 }
@@ -136,6 +148,7 @@ $("unit").onchange=function(){
   $(x[0]).oninput=function(){S[x[1]]=parseFloat(this.value)||0;save();calc()};
 });
 $("step").onchange=function(){S.step=this.value;save();calc()};
+$("graph").onchange=function(){S.graph=this.value;save();calc()};
 $("addP").onclick=function(){S.periods.push({s:"12:00",r:10});save();periodsUI();calc()};
 ["now","bg","carbs","prev","prevT"].forEach(function(id){$(id).oninput=calc});
 
@@ -154,10 +167,42 @@ function iobFraction(t,tp,td){
   var f=1-s*(1-a)*((t*t/(tau*td*(1-a))-t/tau-1)*Math.exp(-t/tau)+1);
   return Math.min(1,Math.max(0,f));
 }
+function actFraction(t,tp,td){
+  if(t<=0||t>=td)return 0;
+  var tau=tp*(1-tp/td)/(1-2*tp/td),a=2*tau/td;
+  var s=1/(1-a+(1+a)*Math.exp(-td/tau));
+  return s/(tau*tau)*t*(1-t/td)*Math.exp(-t/tau);
+}
+function drawGraph(){
+  var sec=$("gsec"),mode=S.graph,td=S.dia*60,tp=S.peak;
+  if(mode==="none"||!(td>0)||!(tp>0)||tp>=td/2){sec.hidden=true;return}
+  sec.hidden=false;
+  var W=320,H=190,L=38,R=10,T=10,B=30,pw=W-L-R,ph=H-T-B,N=60,i,vals=[],ymax=100;
+  for(i=0;i<=N;i++){var t=td*i/N;vals.push(mode==="iob"?iobFraction(t,tp,td)*100:actFraction(t,tp,td)*6000)}
+  if(mode!=="iob"){ymax=Math.max(10,Math.ceil(Math.max.apply(null,vals)/10)*10)}
+  var X=function(m){return L+pw*m/td},Y=function(v){return T+ph-ph*v/ymax};
+  var line="",s="";
+  vals.forEach(function(v,i){line+=(i?"L":"M")+X(td*i/N).toFixed(1)+" "+Y(v).toFixed(1)});
+  var area=line+"L"+X(td).toFixed(1)+" "+Y(0).toFixed(1)+"L"+X(0).toFixed(1)+" "+Y(0).toFixed(1)+"Z";
+  [0,0.5,1].forEach(function(f){
+    var yv=ymax*f,y=Y(yv);
+    s+='<line class="gaxis" x1="'+L+'" x2="'+(W-R)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'"/><text class="gtxt" x="'+(L-6)+'" y="'+(y+3).toFixed(1)+'" text-anchor="end">'+Math.round(yv)+'%</text>';
+  });
+  var step=S.dia>6?2:1;
+  for(var h=0;h<=S.dia;h+=step){
+    var x=X(h*60).toFixed(1);
+    s+='<line class="gaxis" x1="'+x+'" x2="'+x+'" y1="'+Y(0).toFixed(1)+'" y2="'+(Y(0)+4).toFixed(1)+'"/><text class="gtxt" x="'+x+'" y="'+(H-10)+'" text-anchor="middle">'+h+'h</text>';
+  }
+  s+='<path class="garea" d="'+area+'"/><path class="gline" d="'+line+'"/>';
+  var title=mode==="iob"?"Insulin on board after a bolus":"How hard the insulin is working";
+  $("gt").textContent=title;
+  $("gbox").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="'+title+'">'+s+'</svg>';
+  $("gcap").textContent=(mode==="iob"?"Share of a dose not yet used":"Share of a dose used per hour")+". Peak "+tp+" min, lasts "+S.dia+" h.";
+}
 var lastDose=null;
 function calc(){
   var out=$("out"),h="";
-  lastDose=null;$("saveB").disabled=true;
+  lastDose=null;$("saveB").disabled=true;drawGraph();
   var bg=parseFloat($("bg").value),carbs=parseFloat($("carbs").value)||0,prev=parseFloat($("prev").value)||0;
   var now=mins($("now").value),pt=mins($("prevT").value);
   var u=S.unit==="mmol"?"mmol/L":"mg/dL";
