@@ -23,9 +23,11 @@ h1{font-size:1.5rem;margin:0 0 2px}
 .sub{color:var(--mute);margin:0 0 18px;font-size:.95rem}
 section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
 h2{font-size:1.05rem;margin:0 0 12px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-label{display:block;font-size:.9rem;color:var(--mute)}
-input,select{width:100%;margin-top:4px;padding:10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;min-height:44px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+label{display:flex;flex-direction:column;justify-content:flex-end;min-width:0;font-size:.9rem;color:var(--mute)}
+input,select{display:block;width:100%;min-width:0;margin-top:4px;padding:0 10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;height:44px}
+input[type=time],input[type=number]{-webkit-appearance:none;appearance:none;text-align:left}
+input::-webkit-date-and-time-value{text-align:left}
 input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .full{grid-column:1/-1}
 .result{border:2px solid var(--accent)}
@@ -42,10 +44,11 @@ input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visi
 .alert.warn{background:var(--warnbg);color:var(--warn)}
 .alert.bad{background:var(--badbg);color:var(--bad)}
 details summary{cursor:pointer;font-weight:700;font-size:1.05rem;min-height:32px}
-.period{display:grid;grid-template-columns:1fr 1fr 44px;gap:8px;align-items:end;margin-bottom:8px}
+.period{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px;gap:8px;align-items:end;margin-bottom:8px}
 button{font:inherit;min-height:44px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700;padding:0 14px}
 .note{font-size:.85rem;color:var(--mute);margin-top:12px}
+@media (max-width:359px){.grid{grid-template-columns:minmax(0,1fr)}.dose b{font-size:2.8rem}}
 </style>
 </head>
 <body>

@@ -1,5 +1,5 @@
 // Bump CACHE whenever you change index.html so installed copies refresh.
-const CACHE = "bolus-v1";
+const CACHE = "bolus-v2";
 const FILES = ["./", "index.html", "manifest.json", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
