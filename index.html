@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bolus Calculator</title>
+<meta name="theme-color" content="#0b6b66">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bolus">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#eef3f2;--surface:#fff;--ink:#14292a;--mute:#5b7070;--line:#cfdcda;--accent:#0b6b66;--accent-ink:#fff;--warn:#a4400b;--warnbg:#fdeede;--bad:#9b1c1c;--badbg:#fde8e8;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1b1b;--surface:#172626;--ink:#e6f0ee;--mute:#9bb2af;--line:#2c4442;--accent:#5fd0c6;--accent-ink:#06211f;--warn:#f5b27a;--warnbg:#3a2615;--bad:#f6a3a3;--badbg:#3b1a1a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1b1b;--surface:#172626;--ink:#e6f0ee;--mute:#9bb2af;--line:#2c4442;--accent:#5fd0c6;--accent-ink:#06211f;--warn:#f5b27a;--warnbg:#3a2615;--bad:#f6a3a3;--badbg:#3b1a1a;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 17px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:560px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.5rem;margin:0 0 2px}
+.sub{color:var(--mute);margin:0 0 18px;font-size:.95rem}
+section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+h2{font-size:1.05rem;margin:0 0 12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:block;font-size:.9rem;color:var(--mute)}
+input,select{width:100%;margin-top:4px;padding:10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;min-height:44px}
+input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.full{grid-column:1/-1}
+.result{border:2px solid var(--accent)}
+.dose{display:flex;align-items:baseline;gap:8px}
+.dose b{font-size:3.4rem;line-height:1;color:var(--accent)}
+.dose span{color:var(--mute)}
+.rows{margin:14px 0 0;border-top:1px solid var(--line)}
+.row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.95rem}
+.row small{color:var(--mute);display:block}
+.row em{font-style:normal;font-weight:700;white-space:nowrap}
+.bar{height:10px;background:var(--bg);border:1px solid var(--line);border-radius:5px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.alert{padding:10px 12px;border-radius:8px;margin-bottom:12px;font-size:.95rem}
+.alert.warn{background:var(--warnbg);color:var(--warn)}
+.alert.bad{background:var(--badbg);color:var(--bad)}
+details summary{cursor:pointer;font-weight:700;font-size:1.05rem;min-height:32px}
+.period{display:grid;grid-template-columns:1fr 1fr 44px;gap:8px;align-items:end;margin-bottom:8px}
+button{font:inherit;min-height:44px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700;padding:0 14px}
+.note{font-size:.85rem;color:var(--mute);margin-top:12px}
+</style>
+</head>
+<body>
+<main>
+<h1>Bolus calculator</h1>
+<p class="sub">Meal dose + correction dose − active insulin.</p>
+
+<section aria-labelledby="h-in">
+<h2 id="h-in">This calculation</h2>
+<div class="grid">
+<label>Current time<input type="time" id="now"></label>
+<label>Blood glucose (<span class="u"></span>)<input type="number" id="bg" inputmode="decimal" step="any" min="0"></label>
+<label>Carbs to eat (g)<input type="number" id="carbs" inputmode="decimal" step="any" min="0" value="0"></label>
+<label>Previous bolus (units)<input type="number" id="prev" inputmode="decimal" step="any" min="0" value="0"></label>
+<label class="full">Time of previous bolus<input type="time" id="prevT"></label>
+</div>
+</section>
+
+<section class="result" aria-live="polite" id="out"></section>
+<button type="button" class="primary" id="saveB" style="width:100%" disabled>Save as previous bolus</button>
+<p class="note" id="saveMsg" aria-live="polite" style="margin:8px 0 14px">Saves the current time and suggested dose for your next calculation. Change the dose under "Previous bolus" if you took a different amount.</p>
+
+<section>
+<details>
+<summary>Settings</summary>
+<div class="grid" style="margin-top:12px">
+<label>Glucose units<select id="unit"><option value="mmol">mmol/L</option><option value="mg">mg/dL</option></select></label>
+<label>Target glucose (<span class="u"></span>)<input type="number" id="target" inputmode="decimal" step="any"></label>
+<label>Correction factor (<span class="u"></span> drop per unit)<input type="number" id="cf" inputmode="decimal" step="any"></label>
+<label>Insulin action time (hours)<input type="number" id="dia" inputmode="decimal" step="any"></label>
+<label>Round dose to (units)<select id="step"><option>0.05</option><option>0.1</option><option>0.5</option><option>1</option></select></label>
+<label>Maximum dose (units)<input type="number" id="max" inputmode="decimal" step="any"></label>
+</div>
+<h2 style="margin-top:18px">Carb ratio (g of carbs per unit)</h2>
+<div id="periods"></div>
+<button type="button" id="addP">Add time period</button>
+<p class="note">Each ratio applies from its start time until the next one begins. Settings are saved on this device.</p>
+</details>
+</section>
+
+<p class="note">This tool does arithmetic with the numbers you enter. It does not replace advice from your diabetes care team. Set and check every setting with them, and check each dose before you give it.</p>
+</main>
+
+<script>
+(function(){
+var KEY="bolus-settings-v1";
+var S={unit:"mmol",target:6,cf:2,dia:4,step:"0.5",max:15,periods:[{s:"00:00",r:12},{s:"06:00",r:10},{s:"11:00",r:12},{s:"17:00",r:12}]};
+try{var raw=localStorage.getItem(KEY);if(raw){var p=JSON.parse(raw);if(p&&p.periods&&p.periods.length)S=Object.assign(S,p)}}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+var $=function(id){return document.getElementById(id)};
+function hhmm(d){return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)}
+function mins(t){var a=(t||"").split(":");return a.length<2||a[0]===""?null:(+a[0])*60+(+a[1])}
+function fmt(n,d){return (Math.round(n*Math.pow(10,d))/Math.pow(10,d)).toFixed(d)}
+function dp(){return S.unit==="mmol"?1:0}
+
+$("now").value=hhmm(new Date());
+
+function periodsUI(){
+  var el=$("periods");el.innerHTML="";
+  S.periods.forEach(function(p,i){
+    var d=document.createElement("div");d.className="period";
+    d.innerHTML='<label>From<input type="time" value="'+p.s+'"></label><label>g per unit<input type="number" step="any" min="0" inputmode="decimal" value="'+p.r+'"></label><button type="button" aria-label="Remove period" '+(S.periods.length<2?"disabled":"")+'>×</button>';
+    var ins=d.querySelectorAll("input");
+    ins[0].oninput=function(){p.s=this.value||"00:00";save();calc()};
+    ins[1].oninput=function(){p.r=parseFloat(this.value)||0;save();calc()};
+    d.querySelector("button").onclick=function(){S.periods.splice(i,1);save();periodsUI();calc()};
+    el.appendChild(d);
+  });
+}
+function fillSettings(){
+  $("unit").value=S.unit;$("target").value=S.target;$("cf").value=S.cf;$("dia").value=S.dia;$("step").value=S.step;$("max").value=S.max;
+  document.querySelectorAll(".u").forEach(function(e){e.textContent=S.unit==="mmol"?"mmol/L":"mg/dL"});
+  $("bg").step=S.unit==="mmol"?"0.1":"1";
+}
+$("unit").onchange=function(){
+  var to=this.value;if(to===S.unit)return;
+  var k=to==="mg"?18:1/18;
+  S.target=+fmt(S.target*k,to==="mg"?0:1);S.cf=+fmt(S.cf*k,to==="mg"?0:1);
+  var b=parseFloat($("bg").value);if(!isNaN(b))$("bg").value=fmt(b*k,to==="mg"?0:1);
+  S.unit=to;save();fillSettings();calc();
+};
+[["target","target"],["cf","cf"],["dia","dia"],["max","max"]].forEach(function(x){
+  $(x[0]).oninput=function(){S[x[1]]=parseFloat(this.value)||0;save();calc()};
+});
+$("step").onchange=function(){S.step=this.value;save();calc()};
+$("addP").onclick=function(){S.periods.push({s:"12:00",r:10});save();periodsUI();calc()};
+["now","bg","carbs","prev","prevT"].forEach(function(id){$(id).oninput=calc});
+
+function ratioAt(t){
+  var list=S.periods.map(function(p){return{m:mins(p.s)||0,r:p.r}}).sort(function(a,b){return a.m-b.m});
+  var pick=list[list.length-1];
+  list.forEach(function(p){if(p.m<=t)pick=p});
+  return pick;
+}
+
+var lastDose=null;
+function calc(){
+  var out=$("out"),h="";
+  lastDose=null;$("saveB").disabled=true;
+  var bg=parseFloat($("bg").value),carbs=parseFloat($("carbs").value)||0,prev=parseFloat($("prev").value)||0;
+  var now=mins($("now").value),pt=mins($("prevT").value);
+  var u=S.unit==="mmol"?"mmol/L":"mg/dL";
+  if(isNaN(bg)||now===null){out.innerHTML='<h2>Suggested dose</h2><p class="sub" style="margin:0">Enter the current time and blood glucose to see a dose.</p>';return}
+  if(!(S.cf>0)||!(S.dia>0)){out.innerHTML='<h2>Suggested dose</h2><div class="alert bad">Set a correction factor and insulin action time in Settings.</div>';return}
+
+  var elapsed=0,iob=0;
+  if(prev>0){
+    if(pt===null){h+='<div class="alert warn">Enter the time of the previous bolus so active insulin can be estimated. Until then it counts as zero.</div>'}
+    else{elapsed=(now-pt)/60;if(elapsed<0)elapsed+=24;
+      iob=Math.max(0,prev*(1-elapsed/S.dia));}
+  }
+  var rp=ratioAt(now);
+  var meal=rp.r>0?carbs/rp.r:0;
+  var corr=(bg-S.target)/S.cf;
+  var raw=meal+corr-iob;
+  var total=Math.max(0,raw);
+  var capped=false;
+  if(S.max>0&&total>S.max){total=S.max;capped=true}
+  var step=parseFloat(S.step);
+  var rounded=Math.round(total/step)*step;
+  if(S.max>0&&rounded>S.max)rounded=Math.floor(S.max/step)*step;
+
+  var low=S.unit==="mmol"?4:70, high=S.unit==="mmol"?15:270;
+  if(bg<low){h+='<div class="alert bad">Glucose is below '+low+' '+u+'. Treat the low first and follow your care team\'s plan before any insulin.</div>'}
+  else if(bg>=high){h+='<div class="alert warn">Glucose is '+high+' '+u+' or higher. Check ketones and follow your care team\'s sick-day plan.</div>'}
+  if(raw<0&&bg>=low)h+='<div class="alert warn">Active insulin covers more than this meal and correction, so the dose is 0.</div>';
+  if(capped)h+='<div class="alert warn">Dose limited to your maximum of '+S.max+' units.</div>';
+  if(carbs>0&&!(rp.r>0))h+='<div class="alert warn">The carb ratio for this time is 0. Fix it in Settings.</div>';
+
+  var pct=prev>0?Math.round(100*iob/prev):0;
+  h+='<h2>Suggested dose</h2><div class="dose"><b>'+fmt(rounded,step<0.1?2:(step<1?1:0))+'</b><span>units</span></div>';
+  h+='<div class="rows">';
+  h+='<div class="row"><div>Meal dose<small>'+fmt(carbs,0)+' g at 1 unit per '+rp.r+' g</small></div><em>'+fmt(meal,2)+' U</em></div>';
+  h+='<div class="row"><div>Correction dose<small>'+fmt(bg,dp())+' vs target '+fmt(S.target,dp())+' '+u+', '+S.cf+' per unit</small></div><em>'+(corr>=0?"":"− ")+fmt(Math.abs(corr),2)+' U</em></div>';
+  h+='<div class="row"><div>Active insulin<small>'+(prev>0?fmt(elapsed,1)+' h since '+fmt(prev,2)+' U, '+pct+'% left (straight-line over '+S.dia+' h)':'No previous bolus entered')+'</small><div class="bar"><i style="width:'+pct+'%"></i></div></div><em>− '+fmt(iob,2)+' U</em></div>';
+  h+='<div class="row"><div>Calculated total<small>Before rounding and limits</small></div><em>'+fmt(raw,2)+' U</em></div>';
+  h+='</div>';
+  out.innerHTML=h;
+  lastDose=+fmt(rounded,2);$("saveB").disabled=false;
+}
+
+var LKEY="bolus-last-v1";
+function persistLast(){try{localStorage.setItem(LKEY,JSON.stringify({dose:$("prev").value,t:$("prevT").value}))}catch(e){}}
+try{var lr=localStorage.getItem(LKEY);if(lr){var l=JSON.parse(lr);if(l){$("prev").value=l.dose||0;$("prevT").value=l.t||""}}}catch(e){}
+$("prev").addEventListener("input",persistLast);
+$("prevT").addEventListener("input",persistLast);
+$("saveB").onclick=function(){
+  var t=$("now").value,d=lastDose;
+  if(!t||d===null)return;
+  $("prev").value=d;$("prevT").value=t;persistLast();
+  $("bg").value="";$("carbs").value="0";$("now").value=hhmm(new Date());
+  $("saveMsg").textContent="Saved "+d+" units at "+t+" as the previous bolus.";
+  calc();
+};
+
+fillSettings();periodsUI();calc();
+})();
+</script>
+<script>
+if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})}
+</script>
+</body>
+</html>
