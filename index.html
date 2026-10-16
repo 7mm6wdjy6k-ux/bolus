@@ -80,6 +80,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 <label><span>Target glucose <span class="nw">(<span class="u"></span>)</span></span><input type="number" id="target" inputmode="decimal" step="any"></label>
 <label><span>Correction factor <span class="nw">(<span class="u"></span> per unit)</span></span><input type="number" id="cf" inputmode="decimal" step="any"></label>
 <label><span>Insulin action time <span class="nw">(hours)</span></span><input type="number" id="dia" inputmode="decimal" step="any"></label>
+<label><span>Peak insulin action <span class="nw">(minutes)</span></span><input type="number" id="peak" inputmode="decimal" step="any"></label>
 <label><span>Round dose to <span class="nw">(units)</span></span><select id="step"><option>0.05</option><option>0.1</option><option>0.5</option><option>1</option></select></label>
 <label><span>Maximum dose <span class="nw">(units)</span></span><input type="number" id="max" inputmode="decimal" step="any"></label>
 </div>
@@ -96,7 +97,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 <script>
 (function(){
 var KEY="bolus-settings-v1";
-var S={unit:"mmol",target:6,cf:2,dia:4,step:"0.5",max:15,periods:[{s:"00:00",r:12},{s:"06:00",r:10},{s:"11:00",r:12},{s:"17:00",r:12}]};
+var S={unit:"mmol",target:6,cf:2,dia:4,peak:75,step:"0.5",max:15,periods:[{s:"00:00",r:12},{s:"06:00",r:10},{s:"11:00",r:12},{s:"17:00",r:12}]};
 try{var raw=localStorage.getItem(KEY);if(raw){var p=JSON.parse(raw);if(p&&p.periods&&p.periods.length)S=Object.assign(S,p)}}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 var $=function(id){return document.getElementById(id)};
@@ -120,7 +121,7 @@ function periodsUI(){
   });
 }
 function fillSettings(){
-  $("unit").value=S.unit;$("target").value=S.target;$("cf").value=S.cf;$("dia").value=S.dia;$("step").value=S.step;$("max").value=S.max;
+  $("unit").value=S.unit;$("target").value=S.target;$("cf").value=S.cf;$("dia").value=S.dia;$("peak").value=S.peak;$("step").value=S.step;$("max").value=S.max;
   document.querySelectorAll(".u").forEach(function(e){e.textContent=S.unit==="mmol"?"mmol/L":"mg/dL"});
   $("bg").step=S.unit==="mmol"?"0.1":"1";
 }
@@ -131,7 +132,7 @@ $("unit").onchange=function(){
   var b=parseFloat($("bg").value);if(!isNaN(b))$("bg").value=fmt(b*k,to==="mg"?0:1);
   S.unit=to;save();fillSettings();calc();
 };
-[["target","target"],["cf","cf"],["dia","dia"],["max","max"]].forEach(function(x){
+[["target","target"],["cf","cf"],["dia","dia"],["peak","peak"],["max","max"]].forEach(function(x){
   $(x[0]).oninput=function(){S[x[1]]=parseFloat(this.value)||0;save();calc()};
 });
 $("step").onchange=function(){S.step=this.value;save();calc()};
@@ -145,6 +146,14 @@ function ratioAt(t){
   return pick;
 }
 
+function iobFraction(t,tp,td){
+  if(t<=0)return 1;
+  if(t>=td)return 0;
+  var tau=tp*(1-tp/td)/(1-2*tp/td),a=2*tau/td;
+  var s=1/(1-a+(1+a)*Math.exp(-td/tau));
+  var f=1-s*(1-a)*((t*t/(tau*td*(1-a))-t/tau-1)*Math.exp(-t/tau)+1);
+  return Math.min(1,Math.max(0,f));
+}
 var lastDose=null;
 function calc(){
   var out=$("out"),h="";
@@ -153,13 +162,13 @@ function calc(){
   var now=mins($("now").value),pt=mins($("prevT").value);
   var u=S.unit==="mmol"?"mmol/L":"mg/dL";
   if(isNaN(bg)||now===null){out.innerHTML='<h2>Suggested dose</h2><p class="sub" style="margin:0">Enter the current time and blood glucose to see a dose.</p>';return}
-  if(!(S.cf>0)||!(S.dia>0)){out.innerHTML='<h2>Suggested dose</h2><div class="alert bad">Set a correction factor and insulin action time in Settings.</div>';return}
+  if(!(S.cf>0)||!(S.dia>0)||!(S.peak>0)||S.peak>=S.dia*30){out.innerHTML='<h2>Suggested dose</h2><div class="alert bad">In Settings, enter a correction factor, an insulin action time, and a peak time that is less than half the action time.</div>';return}
 
   var elapsed=0,iob=0;
   if(prev>0){
     if(pt===null){h+='<div class="alert warn">Enter the time of the previous bolus so active insulin can be estimated. Until then it counts as zero.</div>'}
     else{elapsed=(now-pt)/60;if(elapsed<0)elapsed+=24;
-      iob=Math.max(0,prev*(1-elapsed/S.dia));}
+      iob=prev*iobFraction(elapsed*60,S.peak,S.dia*60);}
   }
   var rp=ratioAt(now);
   var meal=rp.r>0?carbs/rp.r:0;
@@ -184,7 +193,7 @@ function calc(){
   h+='<div class="rows">';
   h+='<div class="row"><div>Meal dose<small>'+fmt(carbs,0)+' g at 1 unit per '+rp.r+' g</small></div><em>'+fmt(meal,2)+' U</em></div>';
   h+='<div class="row"><div>Correction dose<small>'+fmt(bg,dp())+' vs target '+fmt(S.target,dp())+' '+u+', '+S.cf+' per unit</small></div><em>'+(corr>=0?"":"− ")+fmt(Math.abs(corr),2)+' U</em></div>';
-  h+='<div class="row"><div>Active insulin<small>'+(prev>0?fmt(elapsed,1)+' h since '+fmt(prev,2)+' U, '+pct+'% left (straight-line over '+S.dia+' h)':'No previous bolus entered')+'</small><div class="bar"><i style="width:'+pct+'%"></i></div></div><em>− '+fmt(iob,2)+' U</em></div>';
+  h+='<div class="row"><div>Active insulin<small>'+(prev>0?fmt(elapsed,1)+' h since '+fmt(prev,2)+' U, '+pct+'% left (curve: peak '+S.peak+' min, lasts '+S.dia+' h)':'No previous bolus entered')+'</small><div class="bar"><i style="width:'+pct+'%"></i></div></div><em>− '+fmt(iob,2)+' U</em></div>';
   h+='<div class="row"><div>Calculated total<small>Before rounding and limits</small></div><em>'+fmt(raw,2)+' U</em></div>';
   h+='</div>';
   out.innerHTML=h;
