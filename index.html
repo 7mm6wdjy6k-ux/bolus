@@ -34,8 +34,8 @@ input::-webkit-date-and-time-value{text-align:left}
 .gaxis{stroke:var(--line);stroke-width:1}
 .gtxt{fill:var(--mute);font-size:10px}
 #gbox svg{display:block;max-width:100%;height:auto}
-.gnow{stroke:#d93025;stroke-width:2}
-.gnowt{fill:#d93025;font-size:10px;font-weight:700}
+.gnow{stroke:#d93025;stroke-width:1}
+.gnowt{fill:#d93025;font-size:10px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .gnow{stroke:#ff7b72}:root:not([data-theme="light"]) .gnowt{fill:#ff7b72}}
 :root[data-theme="dark"] .gnow{stroke:#ff7b72}
 :root[data-theme="dark"] .gnowt{fill:#ff7b72}
@@ -108,7 +108,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 </details>
 </section>
 
-<p class="note">This tool does arithmetic with the numbers you enter. It does not replace advice from your diabetes care team. Set and check every setting with them, and check each dose before you give it.</p>
+<div class="alert warn">This tool does arithmetic with the numbers you enter. It does not replace advice from your diabetes care team. Set and check every setting with them, and check each dose before you give it.</div>
 </main>
 
 <script>
@@ -229,7 +229,7 @@ function calc(){
   var bg=parseFloat($("bg").value),carbs=parseFloat($("carbs").value)||0,prev=parseFloat($("prev").value)||0;
   var now=mins($("now").value),pt=mins($("prevT").value);
   var u=S.unit==="mmol"?"mmol/L":"mg/dL";
-  if(isNaN(bg)||now===null){out.innerHTML='<h2>Suggested dose</h2><p class="sub" style="margin:0">Enter the current time and blood glucose to see a dose.</p>';return}
+  if(isNaN(bg)||now===null){out.innerHTML='<h2>Suggested dose</h2><p class="sub" style="margin:0">Check the current time, previous bolus time and previous dose are correct. Then enter your current blood glucose and carbs to see a dose.</p>';return}
   if(!(S.cf>0)||!(S.dia>0)||!(S.peak>0)||S.peak>=S.dia*30){out.innerHTML='<h2>Suggested dose</h2><div class="alert bad">In Settings, enter a correction factor, an insulin action time, and a peak time that is less than half the action time.</div>';return}
 
   var elapsed=0,iob=0;
