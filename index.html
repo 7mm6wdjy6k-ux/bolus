@@ -114,7 +114,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 <script>
 (function(){
 var KEY="bolus-settings-v1";
-var S={unit:"mmol",target:6,cf:2,dia:4,peak:75,graph:"iob",step:"0.5",max:15,periods:[{s:"00:00",r:12},{s:"06:00",r:10},{s:"11:00",r:12},{s:"17:00",r:12}]};
+var S={unit:"mmol",target:6,cf:2,dia:4,peak:75,graph:"iob",step:"0.5",max:15,periods:[{s:"00:00",r:5},{s:"15:00",r:5.5}]};
 try{var raw=localStorage.getItem(KEY);if(raw){var p=JSON.parse(raw);if(p&&p.periods&&p.periods.length)S=Object.assign(S,p)}}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 var $=function(id){return document.getElementById(id)};
