@@ -42,7 +42,10 @@ input::-webkit-date-and-time-value{text-align:left}
 input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .full{grid-column:1/-1}
 .result{border:2px solid var(--accent)}
-.dose{display:flex;align-items:baseline;gap:8px}
+.dose{display:flex;align-items:center;gap:12px}
+.dose span{margin-right:auto}
+.adj{width:48px;height:48px;min-height:48px;padding:0;font-size:1.6rem;line-height:1;border-radius:50%}
+.adj:disabled{opacity:.35;cursor:default}
 .dose b{font-size:3.4rem;line-height:1;color:var(--accent)}
 .dose span{color:var(--mute)}
 .rows{margin:14px 0 0;border-top:1px solid var(--line)}
@@ -80,7 +83,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 
 <section class="result" aria-live="polite" id="out"></section>
 <button type="button" class="primary" id="saveB" style="width:100%" disabled>Save as previous bolus</button>
-<p class="note" id="saveMsg" aria-live="polite" style="margin:8px 0 14px">Saves the current time and suggested dose for your next calculation. Change the dose under "Previous bolus" if you took a different amount.</p>
+<p class="note" id="saveMsg" aria-live="polite" style="margin:8px 0 14px">Saves the current time and the dose shown for your next calculation. Change the dose under "Previous bolus" if you took a different amount.</p>
 
 <section id="gsec" hidden>
 <h2 id="gt">Graph</h2>
@@ -222,7 +225,7 @@ function drawGraph(){
   var base=(usedPrev?"your "+(+dose.toFixed(2))+" U bolus":"a 1 U bolus (enter a previous bolus to scale the graph)")+(hasT?" at "+$("prevT").value:"");
   $("gcap").textContent=(mode==="iob"?"Units still active from ":"Units used per hour from ")+base+". Peak "+tp+" min, lasts "+S.dia+" h."+(hasT?"":" The time axis starts at the current time.")+(redShown?" The red line is the current time.":"");
 }
-var lastDose=null;
+var adj=0,lastSig="",lastDose=null;
 function calc(){
   var out=$("out"),h="";
   lastDose=null;$("saveB").disabled=true;drawGraph();
@@ -248,6 +251,12 @@ function calc(){
   var step=parseFloat(S.step);
   var rounded=Math.round(total/step)*step;
   if(S.max>0&&rounded>S.max)rounded=Math.floor(S.max/step)*step;
+  var sig=[bg,carbs,prev,pt,now,JSON.stringify(S)].join("|");
+  if(sig!==lastSig){adj=0;lastSig=sig}
+  var maxD=S.max>0?Math.floor(S.max/step+1e-9)*step:Infinity;
+  var shown=Math.min(maxD,Math.max(0,rounded+adj*step));
+  adj=Math.round((shown-rounded)/step);
+  shown=+(rounded+adj*step).toFixed(2);
 
   var low=S.unit==="mmol"?4:70, high=S.unit==="mmol"?15:270;
   if(bg<low){h+='<div class="alert bad">Glucose is below '+low+' '+u+'. Treat the low first and follow your care team\'s plan before any insulin.</div>'}
@@ -257,7 +266,9 @@ function calc(){
   if(carbs>0&&!(rp.r>0))h+='<div class="alert warn">The carb ratio for this time is 0. Fix it in Settings.</div>';
 
   var pct=prev>0?Math.round(100*iob/prev):0;
-  h+='<h2>Suggested dose</h2><div class="dose"><b>'+fmt(rounded,step<0.1?2:(step<1?1:0))+'</b><span>units</span></div>';
+  var dd=step<0.1?2:(step<1?1:0);
+  h+='<h2>Suggested dose</h2><div class="dose"><button type="button" class="adj" data-adj="-1" aria-label="Decrease dose by '+step+' units"'+(shown<=0?" disabled":"")+'>\u2212</button><b>'+fmt(shown,dd)+'</b><span>units</span><button type="button" class="adj" data-adj="1" aria-label="Increase dose by '+step+' units"'+(shown+step>maxD+1e-9?" disabled":"")+'>+</button></div>';
+  if(adj!==0)h+='<p class="note" style="margin:6px 0 0">Adjusted by '+(adj>0?"+":"\u2212")+fmt(Math.abs(adj*step),dd)+' from the suggested '+fmt(rounded,dd)+' units.</p>';
   h+='<div class="rows">';
   h+='<div class="row"><div>Meal dose<small>'+fmt(carbs,0)+' g at 1 unit per '+rp.r+' g</small></div><em>'+fmt(meal,2)+' U</em></div>';
   h+='<div class="row"><div>Correction dose<small>'+fmt(bg,dp())+' vs target '+fmt(S.target,dp())+' '+u+', '+S.cf+' per unit</small></div><em>'+(corr>=0?"":"− ")+fmt(Math.abs(corr),2)+' U</em></div>';
@@ -265,7 +276,7 @@ function calc(){
   h+='<div class="row"><div>Calculated total<small>Before rounding and limits</small></div><em>'+fmt(raw,2)+' U</em></div>';
   h+='</div>';
   out.innerHTML=h;
-  lastDose=+fmt(rounded,2);$("saveB").disabled=false;
+  lastDose=shown;$("saveB").disabled=false;
 }
 
 var LKEY="bolus-last-v1";
@@ -281,6 +292,13 @@ $("saveB").onclick=function(){
   $("saveMsg").textContent="Saved "+d+" units at "+t+" as the previous bolus.";
   calc();
 };
+
+$("out").addEventListener("click",function(e){
+  var b=e.target.closest?e.target.closest("button[data-adj]"):null;
+  if(!b||b.disabled)return;
+  adj+=parseInt(b.getAttribute("data-adj"),10);
+  calc();
+});
 
 fillSettings();periodsUI();calc();
 })();
