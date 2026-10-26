@@ -319,7 +319,7 @@ function renderHist(){
   var el=$("hist"),n=nowTs(),td=S.dia*60,ok=S.dia>0&&S.peak>0&&S.peak<S.dia*30;
   if(!hist.length){el.innerHTML='<p class="note" style="margin:0 0 4px">No recent boluses listed.</p>';return}
   var h="";
-  for(var i=hist.length-1;i>=0;i--){
+  for(var i=0;i<hist.length;i++){
     var b=hist[i],d=new Date(b.t),hm=hhmm(d),st="";
     if(n!==null){
       if(new Date(n).toDateString()!==d.toDateString())hm+=" (yesterday)";
