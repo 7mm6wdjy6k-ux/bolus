@@ -36,6 +36,7 @@ input::-webkit-datetime-edit,input::-webkit-datetime-edit-fields-wrapper{padding
 .gaxis{stroke:var(--line);stroke-width:1}
 .gtxt{fill:var(--mute);font-size:10px}
 #gbox svg{display:block;max-width:100%;height:auto}
+.gthin{fill:none;stroke:var(--accent);stroke-width:1;opacity:.6;stroke-dasharray:3 2}
 .gnow{stroke:#d93025;stroke-width:1}
 .gnowt{fill:#d93025;font-size:10px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .gnow{stroke:#ff7b72}:root:not([data-theme="light"]) .gnowt{fill:#ff7b72}}
@@ -205,40 +206,63 @@ function drawGraph(){
   var sec=$("gsec"),mode=S.graph,td=S.dia*60,tp=S.peak;
   if(mode==="none"||!(td>0)||!(tp>0)||tp>=td/2){sec.hidden=true;return}
   sec.hidden=false;
-  var W=320,H=190,L=48,R=10,T=10,B=30,pw=W-L-R,ph=H-T-B,N=60,i,vals=[],ymax,n=nowTs(),ref=n===null?Date.now():n,last=null,nAct=0,dose=1,usedPrev=false,startTs=ref;
-  hist.forEach(function(b){if(b.t<=ref&&(ref-b.t)/60000<td){nAct++;if(!last||b.t>last.t)last=b}});
-  if(last){dose=last.d;usedPrev=true;startTs=last.t}
-  for(i=0;i<=N;i++){var t=td*i/N;vals.push(mode==="iob"?iobFraction(t,tp,td)*dose:actFraction(t,tp,td)*60*dose)}
-  if(mode==="iob"){ymax=dose}else{ymax=niceMax(Math.max.apply(null,vals))}
-  var X=function(m){return L+pw*m/td},Y=function(v){return T+ph-ph*v/ymax};
-  var line="",s="";
-  vals.forEach(function(v,i){line+=(i?"L":"M")+X(td*i/N).toFixed(1)+" "+Y(v).toFixed(1)});
-  var area=line+"L"+X(td).toFixed(1)+" "+Y(0).toFixed(1)+"L"+X(0).toFixed(1)+" "+Y(0).toFixed(1)+"Z";
-  [0,0.5,1].forEach(function(f){
-    var yv=ymax*f,y=Y(yv);
+  var n=nowTs(),ref=n===null?Date.now():n,list=[];
+  hist.forEach(function(b){if(b.t<=ref&&(ref-b.t)/60000<td)list.push(b)});
+  var usedPrev=list.length>0;
+  if(!usedPrev)list=[{t:ref,d:1}];
+  list.sort(function(a,b){return a.t-b.t});
+  var startTs=list[0].t,span=(list[list.length-1].t-startTs)/60000+td;
+  var ms=list.map(function(b){return(b.t-startTs)/60000});
+  var f=function(i,t){
+    if(t<ms[i])return 0;
+    return mode==="iob"?list[i].d*iobFraction(t-ms[i],tp,td):list[i].d*actFraction(t-ms[i],tp,td)*60;
+  };
+  var times=[],N=120,i,k;
+  for(i=0;i<=N;i++)times.push(span*i/N);
+  ms.forEach(function(m){times.push(m);if(m>0)times.push(m-0.001)});
+  times.sort(function(a,b){return a-b});
+  var tot=times.map(function(t){var v=0;for(k=0;k<list.length;k++)v+=f(k,t);return v});
+  var mx=Math.max.apply(null,tot),ymax=mode==="iob"?Math.max(0.5,Math.ceil(mx*2)/2):niceMax(mx);
+  var W=320,H=190,L=48,R=10,T=10,B=30,pw=W-L-R,ph=H-T-B;
+  var X=function(m){return L+pw*m/span},Y=function(v){return T+ph-ph*v/ymax};
+  var path=function(ts,vs){var p="";for(var j=0;j<ts.length;j++)p+=(j?"L":"M")+X(ts[j]).toFixed(1)+" "+Y(vs[j]).toFixed(1);return p};
+  var s="",line=path(times,tot);
+  var area=line+"L"+X(span).toFixed(1)+" "+Y(0).toFixed(1)+"L"+X(0).toFixed(1)+" "+Y(0).toFixed(1)+"Z";
+  [0,0.5,1].forEach(function(fr){
+    var yv=ymax*fr,y=Y(yv);
     s+='<line class="gaxis" x1="'+L+'" x2="'+(W-R)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'"/><text class="gtxt" x="'+(L-6)+'" y="'+(y+3).toFixed(1)+'" text-anchor="end">'+(+yv.toFixed(2))+' U</text>';
   });
-  var sd=new Date(startTs),startM=sd.getHours()*60+sd.getMinutes(),hasT=usedPrev;
-  var step=S.dia>6?2:1,first=Math.ceil(startM/60)*60-startM;
-  for(var o=first;o<=td;o+=step*60){
+  var sd=new Date(startTs),startM=sd.getHours()*60+sd.getMinutes();
+  var hrs=span/60,step=hrs<=7?1:(hrs<=14?2:3),first=Math.ceil(startM/60)*60-startM;
+  for(var o=first;o<=span;o+=step*60){
     var x=X(o).toFixed(1),hh=Math.floor(((startM+o)/60)%24);
     s+='<line class="gaxis" x1="'+x+'" x2="'+x+'" y1="'+Y(0).toFixed(1)+'" y2="'+(Y(0)+4).toFixed(1)+'"/><text class="gtxt" x="'+x+'" y="'+(H-10)+'" text-anchor="middle">'+("0"+hh).slice(-2)+':00</text>';
   }
-  s+='<path class="garea" d="'+area+'"/><path class="gline" d="'+line+'"/>';
+  s+='<path class="garea" d="'+area+'"/>';
+  if(list.length>1){
+    list.forEach(function(b,j){
+      var ts=[],vs=[];
+      times.forEach(function(t){if(t>=ms[j]){ts.push(t);vs.push(f(j,t))}});
+      s+='<path class="gthin" d="'+path(ts,vs)+'"/>';
+    });
+  }
+  s+='<path class="gline" d="'+line+'"/>';
   var redShown=false;
   if(n!==null){
     var e=(n-startTs)/60000;
-    if(e>=0&&e<=td){
+    if(e>=0&&e<=span){
       redShown=true;
       var nx=X(e),right=nx>W-40;
       s+='<line class="gnow" x1="'+nx.toFixed(1)+'" x2="'+nx.toFixed(1)+'" y1="'+T+'" y2="'+Y(0).toFixed(1)+'"/><text class="gnowt" x="'+(right?nx-4:nx+4).toFixed(1)+'" y="'+(T+9)+'" text-anchor="'+(right?"end":"start")+'">now</text>';
     }
   }
-  var title=mode==="iob"?"Insulin on board after a bolus":"How hard the insulin is working";
+  var multi=list.length>1;
+  var title=mode==="iob"?(multi?"Insulin on board from your recent boluses":"Insulin on board after a bolus"):"How hard the insulin is working";
   $("gt").textContent=title;
   $("gbox").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="'+title+'">'+s+'</svg>';
-  var base=usedPrev?"your "+(+dose.toFixed(2))+" U bolus at "+hhmm(sd):"a 1 U bolus (add a recent bolus to scale the graph)";
-  $("gcap").textContent=(mode==="iob"?"Units still active from ":"Units used per hour from ")+base+". Peak "+tp+" min, lasts "+S.dia+" h."+(hasT?"":" The time axis starts at the current time.")+(nAct>1?" Only your most recent bolus is drawn.":"")+(redShown?" The red line is the current time.":"");
+  var what=mode==="iob"?"Units still active":"Units used per hour";
+  var base=multi?": the bold line is the total from your "+list.length+" recent boluses and each thin dashed line is one bolus":(usedPrev?" from your "+(+list[0].d.toFixed(2))+" U bolus at "+hhmm(sd):" from a 1 U bolus (add a recent bolus to scale the graph)");
+  $("gcap").textContent=what+base+". Peak "+tp+" min, lasts "+S.dia+" h."+(usedPrev?"":" The time axis starts at the current time.")+(redShown?" The red line is the current time.":"");
 }
 var adj=0,lastSig="",lastDose=null;
 function calc(){
