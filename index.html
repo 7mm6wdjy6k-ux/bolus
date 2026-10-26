@@ -48,6 +48,12 @@ input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visi
 .dose span{margin-right:auto}
 .adj{width:48px;height:48px;min-height:48px;padding:0;font-size:1.6rem;line-height:1;border-radius:50%}
 .adj:disabled{opacity:.35;cursor:default}
+.hl{font-size:.9rem;color:var(--mute);margin-bottom:4px}
+.hrow{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding:2px 0}
+.hrow span{flex:1;min-width:0}
+.hrow small{color:var(--mute);white-space:nowrap}
+.hrow button{width:44px;padding:0;border:0;background:transparent;font-size:1.3rem}
+.addrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end;margin-top:8px}
 .dose b{font-size:3.4rem;line-height:1;color:var(--accent)}
 .dose span{color:var(--mute)}
 .rows{margin:14px 0 0;border-top:1px solid var(--line)}
@@ -78,14 +84,22 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 <label>Current time<input type="time" id="now"></label>
 <label><span>Blood glucose <span class="nw">(<span class="u"></span>)</span></span><input type="number" id="bg" inputmode="decimal" step="any" min="0"></label>
 <label><span>Carbs to eat <span class="nw">(g)</span></span><input type="number" id="carbs" inputmode="decimal" step="any" min="0" value="0"></label>
-<label><span>Previous bolus <span class="nw">(units)</span></span><input type="number" id="prev" inputmode="decimal" step="any" min="0" value="0"></label>
-<label class="full">Time of previous bolus<input type="time" id="prevT"></label>
+<div class="full">
+<div class="hl">Recent boluses <span class="nw">(still active)</span></div>
+<div id="hist"></div>
+<div class="addrow">
+<label>Time<input type="time" id="addT"></label>
+<label><span>Units</span><input type="number" id="addD" inputmode="decimal" step="any" min="0"></label>
+<button type="button" id="addB">Add</button>
+</div>
+<p class="note" id="addMsg" aria-live="polite" style="margin:8px 0 0">Add any bolus from the last few hours that is not listed. The time is taken as the most recent time up to now.</p>
+</div>
 </div>
 </section>
 
 <section class="result" aria-live="polite" id="out"></section>
-<button type="button" class="primary" id="saveB" style="width:100%" disabled>Save as previous bolus</button>
-<p class="note" id="saveMsg" aria-live="polite" style="margin:8px 0 14px">Saves the current time and the dose shown for your next calculation. Change the dose under "Previous bolus" if you took a different amount.</p>
+<button type="button" class="primary" id="saveB" style="width:100%" disabled>Save this bolus</button>
+<p class="note" id="saveMsg" aria-live="polite" style="margin:8px 0 14px">Adds the dose shown, at the current time, to your recent boluses. If you will take a different amount, adjust it with − and + first.</p>
 
 <section id="gsec" hidden>
 <h2 id="gt">Graph</h2>
@@ -160,7 +174,7 @@ $("unit").onchange=function(){
 $("step").onchange=function(){S.step=this.value;save();calc()};
 $("graph").onchange=function(){S.graph=this.value;save();calc()};
 $("addP").onclick=function(){S.periods.push({s:"12:00",r:10});save();periodsUI();calc()};
-["now","bg","carbs","prev","prevT"].forEach(function(id){$(id).oninput=calc});
+["now","bg","carbs"].forEach(function(id){$(id).oninput=calc});
 
 function ratioAt(t){
   var list=S.periods.map(function(p){return{m:mins(p.s)||0,r:p.r}}).sort(function(a,b){return a.m-b.m});
@@ -191,8 +205,9 @@ function drawGraph(){
   var sec=$("gsec"),mode=S.graph,td=S.dia*60,tp=S.peak;
   if(mode==="none"||!(td>0)||!(tp>0)||tp>=td/2){sec.hidden=true;return}
   sec.hidden=false;
-  var W=320,H=190,L=48,R=10,T=10,B=30,pw=W-L-R,ph=H-T-B,N=60,i,vals=[],dose=parseFloat($("prev").value),usedPrev=dose>0,ymax;
-  if(!usedPrev)dose=1;
+  var W=320,H=190,L=48,R=10,T=10,B=30,pw=W-L-R,ph=H-T-B,N=60,i,vals=[],ymax,n=nowTs(),ref=n===null?Date.now():n,last=null,nAct=0,dose=1,usedPrev=false,startTs=ref;
+  hist.forEach(function(b){if(b.t<=ref&&(ref-b.t)/60000<td){nAct++;if(!last||b.t>last.t)last=b}});
+  if(last){dose=last.d;usedPrev=true;startTs=last.t}
   for(i=0;i<=N;i++){var t=td*i/N;vals.push(mode==="iob"?iobFraction(t,tp,td)*dose:actFraction(t,tp,td)*60*dose)}
   if(mode==="iob"){ymax=dose}else{ymax=niceMax(Math.max.apply(null,vals))}
   var X=function(m){return L+pw*m/td},Y=function(v){return T+ph-ph*v/ymax};
@@ -203,19 +218,17 @@ function drawGraph(){
     var yv=ymax*f,y=Y(yv);
     s+='<line class="gaxis" x1="'+L+'" x2="'+(W-R)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'"/><text class="gtxt" x="'+(L-6)+'" y="'+(y+3).toFixed(1)+'" text-anchor="end">'+(+yv.toFixed(2))+' U</text>';
   });
-  var startM=mins($("prevT").value),hasT=startM!==null;
-  if(!hasT)startM=mins($("now").value);
-  if(startM===null)startM=0;
+  var sd=new Date(startTs),startM=sd.getHours()*60+sd.getMinutes(),hasT=usedPrev;
   var step=S.dia>6?2:1,first=Math.ceil(startM/60)*60-startM;
   for(var o=first;o<=td;o+=step*60){
     var x=X(o).toFixed(1),hh=Math.floor(((startM+o)/60)%24);
     s+='<line class="gaxis" x1="'+x+'" x2="'+x+'" y1="'+Y(0).toFixed(1)+'" y2="'+(Y(0)+4).toFixed(1)+'"/><text class="gtxt" x="'+x+'" y="'+(H-10)+'" text-anchor="middle">'+("0"+hh).slice(-2)+':00</text>';
   }
   s+='<path class="garea" d="'+area+'"/><path class="gline" d="'+line+'"/>';
-  var redShown=false,nowM=mins($("now").value);
-  if(nowM!==null){
-    var e=nowM-startM;if(e<0)e+=1440;
-    if(e<=td){
+  var redShown=false;
+  if(n!==null){
+    var e=(n-startTs)/60000;
+    if(e>=0&&e<=td){
       redShown=true;
       var nx=X(e),right=nx>W-40;
       s+='<line class="gnow" x1="'+nx.toFixed(1)+'" x2="'+nx.toFixed(1)+'" y1="'+T+'" y2="'+Y(0).toFixed(1)+'"/><text class="gnowt" x="'+(right?nx-4:nx+4).toFixed(1)+'" y="'+(T+9)+'" text-anchor="'+(right?"end":"start")+'">now</text>';
@@ -224,25 +237,26 @@ function drawGraph(){
   var title=mode==="iob"?"Insulin on board after a bolus":"How hard the insulin is working";
   $("gt").textContent=title;
   $("gbox").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="'+title+'">'+s+'</svg>';
-  var base=(usedPrev?"your "+(+dose.toFixed(2))+" U bolus":"a 1 U bolus (enter a previous bolus to scale the graph)")+(hasT?" at "+$("prevT").value:"");
-  $("gcap").textContent=(mode==="iob"?"Units still active from ":"Units used per hour from ")+base+". Peak "+tp+" min, lasts "+S.dia+" h."+(hasT?"":" The time axis starts at the current time.")+(redShown?" The red line is the current time.":"");
+  var base=usedPrev?"your "+(+dose.toFixed(2))+" U bolus at "+hhmm(sd):"a 1 U bolus (add a recent bolus to scale the graph)";
+  $("gcap").textContent=(mode==="iob"?"Units still active from ":"Units used per hour from ")+base+". Peak "+tp+" min, lasts "+S.dia+" h."+(hasT?"":" The time axis starts at the current time.")+(nAct>1?" Only your most recent bolus is drawn.":"")+(redShown?" The red line is the current time.":"");
 }
 var adj=0,lastSig="",lastDose=null;
 function calc(){
   var out=$("out"),h="";
-  lastDose=null;$("saveB").disabled=true;drawGraph();
-  var bg=parseFloat($("bg").value),carbs=parseFloat($("carbs").value)||0,prev=parseFloat($("prev").value)||0;
-  var now=mins($("now").value),pt=mins($("prevT").value);
+  lastDose=null;$("saveB").disabled=true;drawGraph();renderHist();
+  var bg=parseFloat($("bg").value),carbs=parseFloat($("carbs").value)||0;
+  var now=mins($("now").value),nTs=nowTs();
   var u=S.unit==="mmol"?"mmol/L":"mg/dL";
-  if(isNaN(bg)||now===null){out.innerHTML='<h2>Suggested dose</h2><p class="sub" style="margin:0">Check the current time, previous bolus time and previous dose are correct. Then enter your current blood glucose and carbs to see a dose.</p>';return}
+  if(isNaN(bg)||now===null){out.innerHTML='<h2>Suggested dose</h2><p class="sub" style="margin:0">Check the current time and your recent boluses (time and dose) are correct. Then enter your current blood glucose and carbs to see a dose.</p>';return}
   if(!(S.cf>0)||!(S.dia>0)||!(S.peak>0)||S.peak>=S.dia*30){out.innerHTML='<h2>Suggested dose</h2><div class="alert bad">In Settings, enter a correction factor, an insulin action time, and a peak time that is less than half the action time.</div>';return}
 
-  var elapsed=0,iob=0;
-  if(prev>0){
-    if(pt===null){h+='<div class="alert warn">Enter the time of the previous bolus so active insulin can be estimated. Until then it counts as zero.</div>'}
-    else{elapsed=(now-pt)/60;if(elapsed<0)elapsed+=24;
-      iob=prev*iobFraction(elapsed*60,S.peak,S.dia*60);}
-  }
+  var iob=0,sumAct=0,cnt=0,future=false;
+  hist.forEach(function(b){
+    var e=(nTs-b.t)/60000;
+    if(e<0){future=true;return}
+    if(e>=S.dia*60)return;
+    cnt++;sumAct+=b.d;iob+=b.d*iobFraction(e,S.peak,S.dia*60);
+  });
   var rp=ratioAt(now);
   var meal=rp.r>0?carbs/rp.r:0;
   var corr=(bg-S.target)/S.cf;
@@ -253,7 +267,7 @@ function calc(){
   var step=parseFloat(S.step);
   var rounded=Math.round(total/step)*step;
   if(S.max>0&&rounded>S.max)rounded=Math.floor(S.max/step)*step;
-  var sig=[bg,carbs,prev,pt,now,JSON.stringify(S)].join("|");
+  var sig=[bg,carbs,now,JSON.stringify(hist),JSON.stringify(S)].join("|");
   if(sig!==lastSig){adj=0;lastSig=sig}
   var maxD=S.max>0?Math.floor(S.max/step+1e-9)*step:Infinity;
   var shown=Math.min(maxD,Math.max(0,rounded+adj*step));
@@ -263,35 +277,80 @@ function calc(){
   var low=S.unit==="mmol"?4:70, high=S.unit==="mmol"?15:270;
   if(bg<low){h+='<div class="alert bad">Glucose is below '+low+' '+u+'. Treat the low first and follow your care team\'s plan before any insulin.</div>'}
   else if(bg>=high){h+='<div class="alert warn">Glucose is '+high+' '+u+' or higher. Check ketones and follow your care team\'s sick-day plan.</div>'}
+  if(future)h+='<div class="alert warn">A bolus in your list is later than the current time, so it was left out. Check the times.</div>';
   if(raw<0&&bg>=low)h+='<div class="alert warn">Active insulin covers more than this meal and correction, so the dose is 0.</div>';
   if(capped)h+='<div class="alert warn">Dose limited to your maximum of '+S.max+' units.</div>';
   if(carbs>0&&!(rp.r>0))h+='<div class="alert warn">The carb ratio for this time is 0. Fix it in Settings.</div>';
 
-  var pct=prev>0?Math.round(100*iob/prev):0;
+  var pct=sumAct>0?Math.round(100*iob/sumAct):0;
   var dd=step<0.1?2:(step<1?1:0);
   h+='<h2>Suggested dose</h2><div class="dose"><button type="button" class="adj" data-adj="-1" aria-label="Decrease dose by '+step+' units"'+(shown<=0?" disabled":"")+'>\u2212</button><b>'+fmt(shown,dd)+'</b><span>units</span><button type="button" class="adj" data-adj="1" aria-label="Increase dose by '+step+' units"'+(shown+step>maxD+1e-9?" disabled":"")+'>+</button></div>';
   if(adj!==0)h+='<p class="note" style="margin:6px 0 0">Adjusted by '+(adj>0?"+":"\u2212")+fmt(Math.abs(adj*step),dd)+' from the suggested '+fmt(rounded,dd)+' units.</p>';
   h+='<div class="rows">';
   h+='<div class="row"><div>Meal dose<small>'+fmt(carbs,0)+' g at 1 unit per '+rp.r+' g</small></div><em>'+fmt(meal,2)+' U</em></div>';
   h+='<div class="row"><div>Correction dose<small>'+fmt(bg,dp())+' vs target '+fmt(S.target,dp())+' '+u+', '+S.cf+' per unit</small></div><em>'+(corr>=0?"":"− ")+fmt(Math.abs(corr),2)+' U</em></div>';
-  h+='<div class="row"><div>Active insulin<small>'+(prev>0?fmt(elapsed,1)+' h since '+fmt(prev,2)+' U, '+pct+'% left (curve: peak '+S.peak+' min, lasts '+S.dia+' h)':'No previous bolus entered')+'</small><div class="bar"><i style="width:'+pct+'%"></i></div></div><em>− '+fmt(iob,2)+' U</em></div>';
+  h+='<div class="row"><div>Active insulin<small>'+(cnt>0?cnt+(cnt===1?' bolus':' boluses')+' in the last '+S.dia+' h, '+pct+'% of '+fmt(sumAct,2)+' U left (curve: peak '+S.peak+' min)':'No recent boluses entered')+'</small><div class="bar"><i style="width:'+pct+'%"></i></div></div><em>− '+fmt(iob,2)+' U</em></div>';
   h+='<div class="row"><div>Calculated total<small>Before rounding and limits</small></div><em>'+fmt(raw,2)+' U</em></div>';
   h+='</div>';
   out.innerHTML=h;
   lastDose=shown;$("saveB").disabled=false;
 }
 
-var LKEY="bolus-last-v1";
-function persistLast(){try{localStorage.setItem(LKEY,JSON.stringify({dose:$("prev").value,t:$("prevT").value}))}catch(e){}}
-try{var lr=localStorage.getItem(LKEY);if(lr){var l=JSON.parse(lr);if(l){$("prev").value=l.dose||0;$("prevT").value=l.t||""}}}catch(e){}
-$("prev").addEventListener("input",persistLast);
-$("prevT").addEventListener("input",persistLast);
+var HKEY="bolus-hist-v1",hist=[];
+function nowTs(){var m=mins($("now").value);if(m===null)return null;var d=new Date();d.setHours(Math.floor(m/60),m%60,0,0);return d.getTime()}
+function tsFor(hm,ref){
+  var m=mins(hm);if(m===null||ref===null)return null;
+  var d=new Date(ref);d.setHours(Math.floor(m/60),m%60,0,0);
+  if(d.getTime()>ref){d.setDate(d.getDate()-1);d.setHours(Math.floor(m/60),m%60,0,0)}
+  return d.getTime();
+}
+function saveHist(){try{localStorage.setItem(HKEY,JSON.stringify(hist))}catch(e){}}
+function pruneHist(){
+  var n=nowTs();if(n===null||!(S.dia>0))return;
+  hist=hist.filter(function(b){return n-b.t<S.dia*3600000});
+  hist.sort(function(a,b){return a.t-b.t});
+}
+try{
+  var hr=localStorage.getItem(HKEY);
+  if(hr){var ha=JSON.parse(hr);if(Array.isArray(ha))hist=ha.filter(function(b){return b&&isFinite(b.t)&&b.d>0})}
+}catch(e){}
+pruneHist();saveHist();
+function renderHist(){
+  var el=$("hist"),n=nowTs(),td=S.dia*60,ok=S.dia>0&&S.peak>0&&S.peak<S.dia*30;
+  if(!hist.length){el.innerHTML='<p class="note" style="margin:0 0 4px">No recent boluses listed.</p>';return}
+  var h="";
+  for(var i=hist.length-1;i>=0;i--){
+    var b=hist[i],d=new Date(b.t),hm=hhmm(d),st="";
+    if(n!==null){
+      if(new Date(n).toDateString()!==d.toDateString())hm+=" (yesterday)";
+      var e=(n-b.t)/60000;
+      st=e<0?"after current time":!ok?"":e>=td?"finished":Math.round(100*iobFraction(e,S.peak,td))+"% active";
+    }
+    h+='<div class="hrow"><span><b>'+hm+'</b> \u00b7 '+(+b.d.toFixed(2))+' U</span><small>'+st+'</small><button type="button" data-rm="'+i+'" aria-label="Remove bolus at '+hm+'">\u00d7</button></div>';
+  }
+  el.innerHTML=h;
+}
+$("hist").addEventListener("click",function(e){
+  var b=e.target.closest?e.target.closest("button[data-rm]"):null;
+  if(!b)return;
+  hist.splice(parseInt(b.getAttribute("data-rm"),10),1);saveHist();calc();
+});
+$("addB").onclick=function(){
+  var n=nowTs(),t=tsFor($("addT").value,n),d=parseFloat($("addD").value);
+  if(t===null||!(d>0)){$("addMsg").textContent="Enter the time and dose (above 0) of the bolus.";return}
+  if(S.dia>0&&n-t>=S.dia*3600000){$("addMsg").textContent="That bolus is older than the insulin action time, so it has no effect.";return}
+  hist.push({t:t,d:d});pruneHist();saveHist();
+  $("addD").value="";$("addMsg").textContent="Added "+(+d.toFixed(2))+" units at "+$("addT").value+".";
+  calc();
+};
 $("saveB").onclick=function(){
-  var t=$("now").value,d=lastDose;
-  if(!t||d===null)return;
-  $("prev").value=d;$("prevT").value=t;persistLast();
+  var n=nowTs(),d=lastDose;
+  if(n===null||d===null)return;
+  if(!(d>0)){$("saveMsg").textContent="The dose is 0, so there is nothing to save.";return}
+  var t=$("now").value;
+  hist.push({t:n,d:d});pruneHist();saveHist();
   $("bg").value="";$("carbs").value="0";$("now").value=hhmm(new Date());
-  $("saveMsg").textContent="Saved "+d+" units at "+t+" as the previous bolus.";
+  $("saveMsg").textContent="Saved "+d+" units at "+t+".";
   calc();
 };
 
